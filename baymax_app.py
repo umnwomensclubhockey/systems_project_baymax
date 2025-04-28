@@ -1,38 +1,23 @@
-# --- baymax_app.py (final Streamlit App) ---
+# --- baymax_app.py (final working version) ---
 
 import streamlit as st
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import tensorflow as tf
 import joblib
-import requests
+import tensorflow as tf
+import gdown
 import os
 import random
 
-# --- download files if not already ---
-def download_file(url, output_path):
-    if not os.path.exists(output_path):
-        response = requests.get(url)
-        with open(output_path, 'wb') as f:
-            f.write(response.content)
-
-# your google drive direct download links (use "uc?id=" trick)
-model_url = "https://drive.google.com/uc?id=10w3IhHp2JIAFzWkZzlVkr-Jrjl2aSDfO"
-scaler_url = "https://drive.google.com/uc?id=1sx99xC4nl2hcuBiinOMQi3_I5JWZ9H2n"
-import gdown
-
-# true direct download links (already updated)
+# --- download model and scaler if not present ---
 model_url = "https://drive.google.com/uc?id=10w3IhHp2JIAFzWkZzlVkr-Jrjl2aSDfO"
 scaler_url = "https://drive.google.com/uc?id=1sx99xC4nl2hcuBiinOMQi3_I5JWZ9H2n"
 
-# download if missing
 if not os.path.exists("final_model.keras"):
     gdown.download(model_url, "final_model.keras", quiet=False)
-
 if not os.path.exists("final_scaler.pkl"):
     gdown.download(scaler_url, "final_scaler.pkl", quiet=False)
-
 
 # --- load model and scaler ---
 model = tf.keras.models.load_model('final_model.keras')
@@ -71,7 +56,7 @@ mild_stress_responses = [
     "You seem slightly tense. A short walk might help!"
 ]
 
-# --- classify prediction ---
+# --- helper functions ---
 def classify_prediction(prob, threshold_anxious=0.6, threshold_mild=0.4):
     if prob > threshold_anxious:
         return 'Anxious'
@@ -80,7 +65,6 @@ def classify_prediction(prob, threshold_anxious=0.6, threshold_mild=0.4):
     else:
         return 'Relaxed'
 
-# --- load uploaded file ---
 @st.cache_data
 def load_uploaded_file(uploaded_file):
     data = pd.read_csv(uploaded_file)
@@ -90,7 +74,6 @@ def load_uploaded_file(uploaded_file):
         data.rename(columns={'Temperature_C': 'Temp'}, inplace=True)
     return data
 
-# --- plot trends ---
 def plot_temp_heart_trends(temp_signal, heart_signal):
     fig, axs = plt.subplots(2, 1, figsize=(12,6))
     axs[0].plot(temp_signal)
@@ -102,7 +85,6 @@ def plot_temp_heart_trends(temp_signal, heart_signal):
     axs[1].set_xlabel('Time')
     st.pyplot(fig)
 
-# --- predict uploaded data ---
 def predict_uploaded_data(data):
     heart = data['Pulse'].values
     temp = data['Temp'].values
@@ -114,9 +96,8 @@ def predict_uploaded_data(data):
     return prob
 
 # --- streamlit app layout ---
-st.title("🤖 Baymax Anxiety Detection App")
-st.markdown("Upload your sensor data (.csv) to check your emotional state! ✨")
-st.image("https://upload.wikimedia.org/wikipedia/en/4/4f/Baymax_disney.png", width=250)
+st.title("🩺 Baymax Anxiety Detection App")
+st.write("Upload your recorded pulse and temperature data (.csv) to check your stress state!")
 
 uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
 
@@ -139,5 +120,6 @@ if uploaded_file:
             st.balloons()
             st.success(random.choice(relaxed_responses))
 
-        st.subheader("Sensor Signal Trends 📈")
+        st.subheader("Your Sensor Trends 📈")
         plot_temp_heart_trends(data['Temp'], data['Pulse'])
+
