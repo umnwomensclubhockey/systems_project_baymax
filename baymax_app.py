@@ -1,20 +1,29 @@
-# --- baymax_app.py (final full app for Streamlit deployment) ---
-import gdown
-
-# download model from drive if it doesn't exist
-model_path = 'final_model.keras'
-if not os.path.exists(model_path):
-    url = 'https://drive.google.com/uc?id=FILE_ID'
-    gdown.download(url, model_path, quiet=False)
+# --- baymax_app.py (final Streamlit App) ---
 
 import streamlit as st
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import joblib
 import tensorflow as tf
+import joblib
+import requests
 import os
 import random
+
+# --- download files if not already ---
+def download_file(url, output_path):
+    if not os.path.exists(output_path):
+        response = requests.get(url)
+        with open(output_path, 'wb') as f:
+            f.write(response.content)
+
+# your google drive direct download links (use "uc?id=" trick)
+model_url = "https://drive.google.com/uc?id=10w3IhHp2JIAFzWkZzlVkr-Jrjl2aSDfO"
+scaler_url = "https://drive.google.com/uc?id=1sx99xC4nl2hcuBiinOMQi3_I5JWZ9H2n"
+
+# download if missing
+download_file(model_url, "final_model.keras")
+download_file(scaler_url, "final_scaler.pkl")
 
 # --- load model and scaler ---
 model = tf.keras.models.load_model('final_model.keras')
@@ -53,7 +62,7 @@ mild_stress_responses = [
     "You seem slightly tense. A short walk might help!"
 ]
 
-# --- helper functions ---
+# --- classify prediction ---
 def classify_prediction(prob, threshold_anxious=0.6, threshold_mild=0.4):
     if prob > threshold_anxious:
         return 'Anxious'
@@ -62,6 +71,7 @@ def classify_prediction(prob, threshold_anxious=0.6, threshold_mild=0.4):
     else:
         return 'Relaxed'
 
+# --- load uploaded file ---
 @st.cache_data
 def load_uploaded_file(uploaded_file):
     data = pd.read_csv(uploaded_file)
@@ -71,6 +81,7 @@ def load_uploaded_file(uploaded_file):
         data.rename(columns={'Temperature_C': 'Temp'}, inplace=True)
     return data
 
+# --- plot trends ---
 def plot_temp_heart_trends(temp_signal, heart_signal):
     fig, axs = plt.subplots(2, 1, figsize=(12,6))
     axs[0].plot(temp_signal)
@@ -82,10 +93,10 @@ def plot_temp_heart_trends(temp_signal, heart_signal):
     axs[1].set_xlabel('Time')
     st.pyplot(fig)
 
+# --- predict uploaded data ---
 def predict_uploaded_data(data):
     heart = data['Pulse'].values
     temp = data['Temp'].values
-    # simple windowing: use entire signals
     heart_features = [np.mean(heart), np.std(heart), np.ptp(heart), np.min(heart)]
     temp_features = [np.mean(temp), np.std(temp), np.ptp(temp), np.min(temp)]
     feats = np.array(heart_features + temp_features).reshape(1, -1)
@@ -94,35 +105,30 @@ def predict_uploaded_data(data):
     return prob
 
 # --- streamlit app layout ---
-st.set_page_config(page_title="Baymax Anxiety Detector", page_icon="🩺")
-st.title("🩺 Welcome to Baymax Anxiety Detection!")
-st.write("Upload your recorded **pulse** and **temperature** data (.csv) to check your emotional state!")
+st.title("🤖 Baymax Anxiety Detection App")
+st.markdown("Upload your sensor data (.csv) to check your emotional state! ✨")
+st.image("https://upload.wikimedia.org/wikipedia/en/4/4f/Baymax_disney.png", width=250)
 
-uploaded_file = st.file_uploader("Choose your data file", type="csv")
+uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
 
 if uploaded_file:
     data = load_uploaded_file(uploaded_file)
-    st.success("✅ Data successfully loaded!")
+    st.success("Data successfully loaded!")
     st.write(data.head())
 
-    if st.button("Analyze My State 🚀"):
+    if st.button("Analyze Now! 🚀"):
         prob = predict_uploaded_data(data)
         label = classify_prediction(prob)
 
-        st.subheader(f"Baymax Diagnosis: {label}")
+        st.subheader(f"Prediction: {label}")
 
         if label == 'Anxious':
-            st.image("assets/anxious_baymax.png", width=250)
             st.success(random.choice(anxious_responses))
         elif label == 'Mild Stress':
-            st.image("assets/mild_stress_cat.png", width=250)
             st.info(random.choice(mild_stress_responses))
         else:
-            st.image("assets/relaxed_baymax.png", width=250)
             st.balloons()
             st.success(random.choice(relaxed_responses))
 
-        st.subheader("Sensor Trends 📈")
+        st.subheader("Sensor Signal Trends 📈")
         plot_temp_heart_trends(data['Temp'], data['Pulse'])
-
-# --- end of app ---
