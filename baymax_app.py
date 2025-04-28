@@ -1,119 +1,119 @@
-# baymax_app.py
+# --- baymax_app.py (final full app for Streamlit deployment) ---
 
 import streamlit as st
-import pandas as pd
 import numpy as np
-import random
-import tensorflow as tf
+import pandas as pd
+import matplotlib.pyplot as plt
 import joblib
-from scipy.signal import find_peaks
-from scipy.fft import fft
-from scipy.stats import linregress
+import tensorflow as tf
+import os
 
 # --- load model and scaler ---
 model = tf.keras.models.load_model('final_model.keras')
 scaler = joblib.load('final_scaler.pkl')
 
-# --- baymax messages ---
+# --- baymax responses ---
 relaxed_responses = [
-    "You are doing great! 🌟",
-    "Your emotional state is normal. Good job! 💖",
-    "All vitals normal. You're healthy and relaxed! ✨",
-    "You seem well-rested and emotionally content. 🌈",
+    "Hello, I am Baymax, your personal healthcare companion. You are doing great!",
+    "Your emotional state is within normal parameters. I am satisfied with your care.",
+    "All vitals normal. You are healthy and relaxed.",
+    "You appear to be in a calm and stable condition.",
+    "No elevated stress detected. You are functioning optimally.",
+    "Your health scan shows a peaceful state. Excellent work!",
+    "Today is a wonderful day! Keep up your excellent self-care.",
+    "Your neural and cardiovascular indicators are stable and strong.",
+    "You seem well-rested and emotionally content.",
+    "I am glad to report: no signs of distress detected."
 ]
 
 anxious_responses = [
-    "I detect elevated stress. Deep breaths! 🫶",
-    "You're under some stress. I'm here for you. 🤗",
-    "Would you like a calming kitten video? 🐱",
-    "Emotional discomfort detected. Relaxation recommended! ☁️",
+    "Hello, I am Baymax. I am detecting elevated stress levels. Would you like a comforting hug?",
+    "Emotional discomfort detected. Administering support sequence.",
+    "High anxiety levels identified. Deep breathing exercise is recommended.",
+    "You seem to be under emotional duress. Initiating relaxation protocol.",
+    "Would you like to hear a calming song or breathing instructions?",
+    "Stress detected. I suggest a moment of mindfulness and breathing.",
+    "Your vitals indicate stress. Please find a comfortable place to relax.",
+    "You are not alone. I am here to assist your recovery.",
+    "Remember: breathing deeply can stabilize heart rate and relax muscles.",
+    "I am equipped to help manage your symptoms. How can I assist you today?"
 ]
 
-# --- feature extraction functions ---
-fs_heart = 250
-fs_temp = 4
-window_size_heart = 10 * fs_heart
-window_size_temp = 10 * fs_temp
+mild_stress_responses = [
+    "You're doing okay, just a hint of stress detected.",
+    "Mild stress noted. A relaxing activity is suggested.",
+    "You seem slightly tense. A short walk might help!"
+]
 
-def extract_temp_features(temp_signal):
-    feats = []
-    for start in range(0, len(temp_signal) - window_size_temp, window_size_temp):
-        window = temp_signal[start:start+window_size_temp]
-        if len(window) < window_size_temp:
-            continue
-        mean_temp = np.mean(window)
-        std_temp = np.std(window)
-        slope_temp = linregress(np.arange(len(window)), window).slope
-        temp_fft = fft(window)
-        temp_power = np.abs(temp_fft[:len(temp_fft)//2])**2
-        low_power = np.sum(temp_power[(0 <= np.arange(len(temp_power))/len(temp_power)*fs_temp) & (np.arange(len(temp_power))/len(temp_power)*fs_temp <= 0.1)])
-        high_power = np.sum(temp_power[(np.arange(len(temp_power))/len(temp_power)*fs_temp > 0.1)])
-        high_low_ratio = high_power / low_power if low_power > 0 else 0
-        feats.append([mean_temp, std_temp, slope_temp, high_low_ratio])
-    return np.array(feats)
+# --- helper functions ---
+def classify_prediction(prob, threshold_anxious=0.6, threshold_mild=0.4):
+    if prob > threshold_anxious:
+        return 'Anxious'
+    elif prob > threshold_mild:
+        return 'Mild Stress'
+    else:
+        return 'Relaxed'
 
-def extract_hrv_features(heart_signal):
-    feats = []
-    for start in range(0, len(heart_signal) - window_size_heart, window_size_heart):
-        window = heart_signal[start:start+window_size_heart]
-        if len(window) < window_size_heart:
-            continue
-        peaks, _ = find_peaks(window, distance=fs_heart*0.6)
-        rr_intervals = np.diff(peaks) / fs_heart
-        if len(rr_intervals) < 2:
-            feats.append([0]*8)
-            continue
-        mean_rr = np.mean(rr_intervals)
-        sdnn = np.std(rr_intervals)
-        rmssd = np.sqrt(np.mean(np.square(np.diff(rr_intervals))))
-        cvrr = sdnn / mean_rr
-        freqs = np.fft.fftfreq(len(rr_intervals), d=np.mean(rr_intervals))
-        rr_fft = np.abs(fft(rr_intervals))**2
-        lf_band = (freqs >= 0.04) & (freqs <= 0.15)
-        hf_band = (freqs > 0.15) & (freqs <= 0.4)
-        lf_power = np.sum(rr_fft[lf_band])
-        hf_power = np.sum(rr_fft[hf_band])
-        lf_hf_ratio = lf_power / hf_power if hf_power > 0 else 0
-        feats.append([mean_rr, sdnn, rmssd, cvrr, lf_power, hf_power, lf_hf_ratio])
-    return np.array(feats)
-
-# --- streamlit app ---
-st.set_page_config(page_title="Baymax Anxiety Detector", page_icon="🤖")
-
-st.title("🤖 Baymax Anxiety Detection App")
-st.write("Upload your heart rate and temperature data (.csv) to check your emotional state!")
-
-uploaded_file = st.file_uploader("Upload your sensor CSV file", type=["csv"])
-
-if uploaded_file is not None:
+@st.cache_data
+def load_uploaded_file(uploaded_file):
     data = pd.read_csv(uploaded_file)
-
     if 'PulseRaw' in data.columns:
         data.rename(columns={'PulseRaw': 'Pulse'}, inplace=True)
     if 'Temperature_C' in data.columns:
         data.rename(columns={'Temperature_C': 'Temp'}, inplace=True)
+    return data
 
-    if 'Pulse' not in data.columns or 'Temp' not in data.columns:
-        st.error("File must have 'Pulse' and 'Temp' columns!")
-    else:
-        pulse = data['Pulse'].values.flatten()
-        temp = data['Temp'].values.flatten()
+def plot_temp_heart_trends(temp_signal, heart_signal):
+    fig, axs = plt.subplots(2, 1, figsize=(12,6))
+    axs[0].plot(temp_signal)
+    axs[0].set_title('Temperature Trend')
+    axs[0].set_ylabel('Temperature (°C)')
+    axs[1].plot(heart_signal)
+    axs[1].set_title('Heart Signal Trend')
+    axs[1].set_ylabel('Pulse Raw')
+    axs[1].set_xlabel('Time')
+    st.pyplot(fig)
 
-        heart_feats = extract_hrv_features(pulse)
-        temp_feats = extract_temp_features(temp)
-        min_len = min(len(heart_feats), len(temp_feats))
-        combined_feats = np.hstack([heart_feats[:min_len], temp_feats[:min_len]])
-        feats_scaled = scaler.transform(combined_feats)
+def predict_uploaded_data(data):
+    heart = data['Pulse'].values
+    temp = data['Temp'].values
+    # simple windowing: use entire signals
+    heart_features = [np.mean(heart), np.std(heart), np.ptp(heart), np.min(heart)]
+    temp_features = [np.mean(temp), np.std(temp), np.ptp(temp), np.min(temp)]
+    feats = np.array(heart_features + temp_features).reshape(1, -1)
+    feats_scaled = scaler.transform(feats)
+    prob = model.predict(feats_scaled)[0][0]
+    return prob
 
-        preds = model.predict(feats_scaled)
-        pred_labels = (preds.flatten() > 0.6).astype(int)
+# --- streamlit app layout ---
+st.title("🩺 Baymax Anxiety Detection App")
+st.write("Upload your recorded pulse and temperature data (.csv) to check your stress state!")
 
-        st.subheader("💬 Baymax's Feedback")
+uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
 
-        for i, label in enumerate(pred_labels):
-            if label == 0:
-                st.success(f"Window {i+1}: {random.choice(relaxed_responses)}")
-            else:
-                st.warning(f"Window {i+1}: {random.choice(anxious_responses)}")
+if uploaded_file:
+    data = load_uploaded_file(uploaded_file)
+    st.success("Data successfully loaded!")
+    st.write(data.head())
 
-        st.balloons()
+    if st.button("Analyze Now! 🚀"):
+        prob = predict_uploaded_data(data)
+        label = classify_prediction(prob)
+
+        st.subheader(f"Prediction: {label}")
+
+        if label == 'Anxious':
+            st.image("assets/anxious_baymax.png", width=250)
+            st.success(random.choice(anxious_responses))
+        elif label == 'Mild Stress':
+            st.image("assets/mild_stress_cat.png", width=250)
+            st.info(random.choice(mild_stress_responses))
+        else:
+            st.image("assets/relaxed_baymax.png", width=250)
+            st.balloons()
+            st.success(random.choice(relaxed_responses))
+
+        st.subheader("Your Sensor Trends")
+        plot_temp_heart_trends(data['Temp'], data['Pulse'])
+
+# --- end of app ---
