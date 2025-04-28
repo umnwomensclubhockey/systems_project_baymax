@@ -88,10 +88,48 @@ def plot_temp_heart_trends(temp_signal, heart_signal):
 def predict_uploaded_data(data):
     heart = data['Pulse'].values
     temp = data['Temp'].values
-    heart_features = [np.mean(heart), np.std(heart), np.ptp(heart), np.min(heart)]
-    temp_features = [np.mean(temp), np.std(temp), np.ptp(temp), np.min(temp)]
+
+    # --- extract HRV features ---
+    fs_heart = 250
+    window_size_heart = 10 * fs_heart
+
+    peaks, _ = signal.find_peaks(heart, distance=fs_heart*0.6)
+    rr_intervals = np.diff(peaks) / fs_heart
+
+    if len(rr_intervals) < 2:
+        heart_features = [0]*8
+    else:
+        mean_rr = np.mean(rr_intervals)
+        sdnn = np.std(rr_intervals)
+        rmssd = np.sqrt(np.mean(np.square(np.diff(rr_intervals))))
+        cvrr = sdnn / mean_rr
+        freqs, psd = welch(rr_intervals, fs=1/np.mean(rr_intervals), nperseg=min(256, len(rr_intervals)))
+        lf_power = np.sum(psd[(freqs >= 0.04) & (freqs <= 0.15)])
+        hf_power = np.sum(psd[(freqs > 0.15) & (freqs <= 0.4)])
+        lf_hf_ratio = lf_power / hf_power if hf_power > 0 else 0
+        low_freq_power = np.sum(psd[(freqs >= 0) & (freqs <= 0.1)])
+        high_freq_power = np.sum(psd[(freqs > 0.1)])
+        high_low_ratio = high_freq_power / low_freq_power if low_freq_power > 0 else 0
+        heart_features = [mean_rr, sdnn, rmssd, cvrr, lf_power, hf_power, lf_hf_ratio, high_low_ratio]
+
+    # --- extract Temp features ---
+    fs_temp = 4
+    window_size_temp = 10 * fs_temp
+
+    mean_temp = np.mean(temp)
+    std_temp = np.std(temp)
+    slope_temp = linregress(np.arange(len(temp)), temp).slope
+    temp_fft = fft(temp)
+    temp_power = np.abs(temp_fft[:len(temp_fft)//2])**2
+    low_power = np.sum(temp_power[(0 <= np.arange(len(temp_power))/len(temp_power)*fs_temp) & (np.arange(len(temp_power))/len(temp_power)*fs_temp <= 0.1)])
+    high_power = np.sum(temp_power[(np.arange(len(temp_power))/len(temp_power)*fs_temp > 0.1)])
+    high_low_ratio = high_power / low_power if low_power > 0 else 0
+    temp_features = [mean_temp, std_temp, slope_temp, high_low_ratio]
+
+    # --- combine ---
     feats = np.array(heart_features + temp_features).reshape(1, -1)
     feats_scaled = scaler.transform(feats)
+
     prob = model.predict(feats_scaled)[0][0]
     return prob
 
