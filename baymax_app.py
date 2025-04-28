@@ -1,4 +1,11 @@
 # --- baymax_app.py (final full app for Streamlit deployment) ---
+import gdown
+
+# download model from drive if it doesn't exist
+model_path = 'final_model.keras'
+if not os.path.exists(model_path):
+    url = 'https://drive.google.com/uc?id=FILE_ID'
+    gdown.download(url, model_path, quiet=False)
 
 import streamlit as st
 import numpy as np
