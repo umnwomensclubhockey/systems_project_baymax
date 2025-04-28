@@ -1,4 +1,4 @@
-# --- baymax_app.py (final working version) ---
+# --- baymax_app.py (final real version) ---
 
 import streamlit as st
 import numpy as np
@@ -10,7 +10,7 @@ import gdown
 import os
 import random
 
-# --- download model and scaler if not present ---
+# --- Download model and scaler if not already present ---
 model_url = "https://drive.google.com/uc?id=10w3IhHp2JIAFzWkZzlVkr-Jrjl2aSDfO"
 scaler_url = "https://drive.google.com/uc?id=1sx99xC4nl2hcuBiinOMQi3_I5JWZ9H2n"
 
@@ -19,11 +19,11 @@ if not os.path.exists("final_model.keras"):
 if not os.path.exists("final_scaler.pkl"):
     gdown.download(scaler_url, "final_scaler.pkl", quiet=False)
 
-# --- load model and scaler ---
+# --- Load model and scaler ---
 model = tf.keras.models.load_model('final_model.keras')
 scaler = joblib.load('final_scaler.pkl')
 
-# --- baymax responses ---
+# --- Baymax Responses ---
 relaxed_responses = [
     "Hello, I am Baymax, your personal healthcare companion. You are doing great!",
     "Your emotional state is within normal parameters. I am satisfied with your care.",
@@ -56,7 +56,7 @@ mild_stress_responses = [
     "You seem slightly tense. A short walk might help!"
 ]
 
-# --- helper functions ---
+# --- Helper functions ---
 def classify_prediction(prob, threshold_anxious=0.6, threshold_mild=0.4):
     if prob > threshold_anxious:
         return 'Anxious'
@@ -95,7 +95,7 @@ def predict_uploaded_data(data):
     prob = model.predict(feats_scaled)[0][0]
     return prob
 
-# --- streamlit app layout ---
+# --- Streamlit App Layout ---
 st.title("🩺 Baymax Anxiety Detection App")
 st.write("Upload your recorded pulse and temperature data (.csv) to check your stress state!")
 
@@ -122,4 +122,5 @@ if uploaded_file:
 
         st.subheader("Your Sensor Trends 📈")
         plot_temp_heart_trends(data['Temp'], data['Pulse'])
+
 
