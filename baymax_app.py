@@ -9,6 +9,10 @@ import tensorflow as tf
 import gdown
 import os
 import random
+import scipy.signal as signal 
+from scipy.fft import fft
+from scipy.signal import welch
+from scipy.stats import linregress
 
 # --- Download model and scaler if not already present ---
 model_url = "https://drive.google.com/uc?id=10w3IhHp2JIAFzWkZzlVkr-Jrjl2aSDfO"
