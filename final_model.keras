@@ -1,146 +1,16 @@
-# --- baymax anxiety detection model training (final version) ---
-
-import numpy as np
-import pandas as pd
-import os
-import glob
-import scipy.signal as signal
-from scipy.fft import fft
-from scipy.stats import linregress
 import tensorflow as tf
-import joblib
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
 
-# --- settings ---
-fs_heart = 250
-fs_temp = 4
-window_size_heart = 10 * fs_heart
-window_size_temp = 10 * fs_temp
+# --- recreate final_model.keras structure ---
 
-# --- feature extraction ---
-def extract_temp_features(temp_signal):
-    feats = []
-    for start in range(0, len(temp_signal) - window_size_temp, window_size_temp):
-        window = temp_signal[start:start+window_size_temp]
-        mean_temp = np.mean(window)
-        std_temp = np.std(window)
-        slope_temp = linregress(np.arange(len(window)), window).slope
-        temp_fft = fft(window)
-        temp_power = np.abs(temp_fft[:len(temp_fft)//2])**2
-        low_power = np.sum(temp_power[(0 <= np.arange(len(temp_power))/len(temp_power)*fs_temp) & (np.arange(len(temp_power))/len(temp_power)*fs_temp <= 0.1)])
-        high_power = np.sum(temp_power[(np.arange(len(temp_power))/len(temp_power)*fs_temp > 0.1)])
-        high_low_ratio = high_power / low_power if low_power > 0 else 0
-        feats.append([mean_temp, std_temp, slope_temp, high_low_ratio])
-    return np.array(feats)
+model = tf.keras.Sequential([
+    tf.keras.layers.Dense(32, activation='relu', input_shape=(8,)),  # 8 features (4 heart + 4 temp)
+    tf.keras.layers.Dropout(0.2),
+    tf.keras.layers.Dense(16, activation='relu'),
+    tf.keras.layers.Dense(1, activation='sigmoid')
+])
 
-def extract_hrv_features(heart_signal):
-    feats = []
-    for start in range(0, len(heart_signal) - window_size_heart, window_size_heart):
-        window = heart_signal[start:start+window_size_heart]
-        peaks, _ = signal.find_peaks(window, distance=fs_heart*0.6)
-        rr_intervals = np.diff(peaks) / fs_heart
-        if len(rr_intervals) < 2:
-            feats.append([0]*8)
-            continue
-        mean_rr = np.mean(rr_intervals)
-        sdnn = np.std(rr_intervals)
-        rmssd = np.sqrt(np.mean(np.square(np.diff(rr_intervals))))
-        cvrr = sdnn / mean_rr
-        freqs = np.fft.fftfreq(len(rr_intervals), d=np.mean(rr_intervals))
-        rr_fft = np.abs(fft(rr_intervals))**2
-        lf_band = (freqs >= 0.04) & (freqs <= 0.15)
-        hf_band = (freqs > 0.15) & (freqs <= 0.4)
-        lf_power = np.sum(rr_fft[lf_band])
-        hf_power = np.sum(rr_fft[hf_band])
-        lf_hf_ratio = lf_power / hf_power if hf_power > 0 else 0
-        feats.append([mean_rr, sdnn, rmssd, cvrr, lf_power, hf_power, lf_hf_ratio])
-    return np.array(feats)
-
-# --- load WESAD and MONASH ---
-def load_wesad_temp_features(base_path):
-    temp_features = []
-    labels = []
-    subject_folders = glob.glob(os.path.join(base_path, 'S*'))
-    for subject_folder in subject_folders:
-        temp_path = os.path.join(subject_folder, os.path.basename(subject_folder) + '_E4_Data', 'TEMP.csv')
-        if os.path.exists(temp_path):
-            temp = pd.read_csv(temp_path, skiprows=6, header=None).values.flatten()
-            feats = extract_temp_features(temp)
-            temp_features.append(feats)
-            labels += [1] * feats.shape[0]
-    return np.vstack(temp_features), np.array(labels)
-
-def load_monash_heart_features(base_path):
-    heart_features = []
-    labels = []
-    for path, subdirs, files in os.walk(base_path):
-        for file in files:
-            if file.endswith('_Heart.csv'):
-                full_path = os.path.join(path, file)
-                heart = pd.read_csv(full_path)
-                heart_signal = heart.iloc[:, 1].values.flatten()
-                feats = extract_hrv_features(heart_signal)
-                heart_features.append(feats)
-                if 'high_anxiety_group' in path.lower():
-                    labels += [1] * feats.shape[0]
-                elif 'low_anxiety_group' in path.lower():
-                    labels += [0] * feats.shape[0]
-    return np.vstack(heart_features), np.array(labels)
-
-# --- train model ---
-def train_model():
-    wesad_path = '/content/drive/My Drive/systems_project_baymax/wesad_unzipped/WESAD/'
-    monash_path = '/content/drive/My Drive/systems_project_baymax/monash_ecg_unzipped/electrocardiogram_data/'
-
-    print('Loading WESAD TEMP features...')
-    X_temp, y_temp = load_wesad_temp_features(wesad_path)
-
-    print('Loading MONASH Heart features...')
-    X_heart, y_heart = load_monash_heart_features(monash_path)
-
-    wesad_dummy_hrv = np.zeros((X_temp.shape[0], 7))
-    X_temp_padded = np.hstack([wesad_dummy_hrv, X_temp])
-    monash_dummy_temp = np.zeros((X_heart.shape[0], 4))
-    X_heart_padded = np.hstack([X_heart, monash_dummy_temp])
-
-    X = np.vstack([X_heart_padded, X_temp_padded])
-    y = np.hstack([y_heart, y_temp])
-
-    idx_anx = np.where(y==1)[0]
-    idx_relaxed = np.where(y==0)[0]
-    np.random.shuffle(idx_anx)
-    idx_anx = idx_anx[:len(idx_relaxed)]
-    idx_balanced = np.hstack([idx_anx, idx_relaxed])
-
-    X = X[idx_balanced]
-    y = y[idx_balanced]
-
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-    scaler = StandardScaler()
-    X_train = scaler.fit_transform(X_train)
-    X_test = scaler.transform(X_test)
-
-    model = tf.keras.Sequential([
-        tf.keras.layers.Dense(32, activation='relu'),
-        tf.keras.layers.Dropout(0.2),
-        tf.keras.layers.Dense(16, activation='relu'),
-        tf.keras.layers.Dense(1, activation='sigmoid')
-    ])
-
-    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-    model.fit(X_train, y_train, epochs=50, batch_size=16, verbose=0)
-
-    model.save('final_model.keras')
-    joblib.dump(scaler, 'final_scaler.pkl')
-
-    y_pred = model.predict(X_test)
-    acc = np.mean((y_pred.flatten() > 0.5) == y_test)
-    print(f'Final Test Accuracy: {acc*100:.2f}%')
-
-    return model, scaler
-
-# --- run training ---
-if __name__ == "__main__":
-    model, scaler = train_model()
+model.compile(
+    optimizer='adam',
+    loss='binary_crossentropy',
+    metrics=['accuracy']
+)
