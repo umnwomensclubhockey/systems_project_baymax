@@ -20,10 +20,19 @@ def download_file(url, output_path):
 # your google drive direct download links (use "uc?id=" trick)
 model_url = "https://drive.google.com/uc?id=10w3IhHp2JIAFzWkZzlVkr-Jrjl2aSDfO"
 scaler_url = "https://drive.google.com/uc?id=1sx99xC4nl2hcuBiinOMQi3_I5JWZ9H2n"
+import gdown
+
+# true direct download links (already updated)
+model_url = "https://drive.google.com/uc?id=10w3IhHp2JIAFzWkZzlVkr-Jrjl2aSDfO"
+scaler_url = "https://drive.google.com/uc?id=1sx99xC4nl2hcuBiinOMQi3_I5JWZ9H2n"
 
 # download if missing
-download_file(model_url, "final_model.keras")
-download_file(scaler_url, "final_scaler.pkl")
+if not os.path.exists("final_model.keras"):
+    gdown.download(model_url, "final_model.keras", quiet=False)
+
+if not os.path.exists("final_scaler.pkl"):
+    gdown.download(scaler_url, "final_scaler.pkl", quiet=False)
+
 
 # --- load model and scaler ---
 model = tf.keras.models.load_model('final_model.keras')
