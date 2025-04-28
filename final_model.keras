@@ -1,16 +1,1 @@
-import tensorflow as tf
-
-# --- recreate final_model.keras structure ---
-
-model = tf.keras.Sequential([
-    tf.keras.layers.Dense(32, activation='relu', input_shape=(8,)),  # 8 features (4 heart + 4 temp)
-    tf.keras.layers.Dropout(0.2),
-    tf.keras.layers.Dense(16, activation='relu'),
-    tf.keras.layers.Dense(1, activation='sigmoid')
-])
-
-model.compile(
-    optimizer='adam',
-    loss='binary_crossentropy',
-    metrics=['accuracy']
-)
+DUMMY MODEL CONTENT
