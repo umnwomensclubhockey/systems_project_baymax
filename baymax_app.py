@@ -1,4 +1,4 @@
-# --- baymax_app.py (fully corrected) ---
+# --- baymax_app.py (final FINAL cute version with thank you + heart) ---
 
 import streamlit as st
 import numpy as np
@@ -78,60 +78,29 @@ def plot_temp_heart_trends(temp_signal, heart_signal):
     axs[1].set_xlabel('Time')
     st.pyplot(fig)
 
-def extract_features(data):
+def predict_uploaded_data(data):
     heart = data['Pulse'].values
     temp = data['Temp'].values
-
-    # --- heart features ---
-    mean_rr = np.mean(heart)
-    sdnn = np.std(heart)
-    rmssd = np.sqrt(np.mean(np.square(np.diff(heart))))
-    cvrr = sdnn / mean_rr if mean_rr != 0 else 0
-
-    freqs, psd = welch(heart, fs=250)
-    lf_power = np.sum(psd[(freqs >= 0.04) & (freqs <= 0.15)])
-    hf_power = np.sum(psd[(freqs > 0.15) & (freqs <= 0.4)])
-    lf_hf_ratio = lf_power / hf_power if hf_power > 0 else 0
-
-    # --- temp features ---
-    mean_temp = np.mean(temp)
-    std_temp = np.std(temp)
-    slope_temp = linregress(np.arange(len(temp)), temp).slope
-    temp_range = np.ptp(temp)
-
-    feats = np.array([
-        mean_rr, sdnn, rmssd, cvrr, lf_power, hf_power, lf_hf_ratio,
-        mean_temp, std_temp, slope_temp, temp_range, np.min(temp)
-    ]).reshape(1, -1)
-
-    return feats
-
-def predict_uploaded_data(data):
-    feats = extract_features(data)
+    heart_features = [np.mean(heart), np.std(heart), np.ptp(heart), np.min(heart)]
+    temp_features = [np.mean(temp), np.std(temp), np.ptp(temp), np.min(temp)]
+    feats = np.array(heart_features + temp_features).reshape(1, -1)
     feats_scaled = scaler.transform(feats)
     prob = model.predict(feats_scaled)[0][0]
     return prob, feats.flatten()
 
-def show_extracted_features(features):
+def show_extracted_features(features, prob):
     st.markdown("### 🧠 Curious How Baymax Made This Decision?")
-    st.markdown(f"""
-- **❤️ Mean Heart Signal:** {features[0]:.2f}  
-- **📈 SDNN (Heart Variability):** {features[1]:.2f}  
-- **⚡ RMSSD (Beat Changes):** {features[2]:.2f}  
-- **🧮 CVRR (Normalized HRV):** {features[3]:.2f}  
-- **🎯 LF Power:** {features[4]:.2f}  
-- **🚀 HF Power:** {features[5]:.2f}  
-- **🔵 LF/HF Ratio:** {features[6]:.2f}  
-- **🌡️ Mean Temp:** {features[7]:.2f} °C  
-- **🌪️ Temp Variability:** {features[8]:.2f}  
-- **📈 Temp Trend Slope:** {features[9]:.4f}  
-- **🌡️ Temp Range:** {features[10]:.2f}  
-- **❄️ Temp Minimum:** {features[11]:.2f}
-""")
-    st.markdown("""
-Baymax looks for signs like faster heartbeat, unstable temperature, and shifting patterns.  
-Calm = steady waves 🌊, Stress = spiky storms ⚡.
-""")
+    feature_names = ['Mean Heart', 'Heart SD', 'Heart Range', 'Heart Min', 'Mean Temp', 'Temp SD', 'Temp Range', 'Temp Min']
+    feature_table = pd.DataFrame({
+        'Feature': feature_names,
+        'Value': features
+    })
+    st.table(feature_table)
+    st.markdown("### 📊 How These Features Compare")
+    st.write(f"- If prediction probability > 0.6 ➔ classified as **Anxious** (yours = {prob:.2f})")
+    st.write(f"- If between 0.4 and 0.6 ➔ classified as **Mild Stress**")
+    st.write(f"- If < 0.4 ➔ classified as **Relaxed**")
+    st.write("Baymax looks for steady heart rhythms and calm temperatures to protect your emotional well-being. ❤️")
 
 # --- streamlit app layout ---
 st.set_page_config(page_title="Baymax Anxiety App", layout="wide")
@@ -156,7 +125,7 @@ if uploaded_file:
     st.write(data.head())
 
     if st.button("Analyze Now! 🚀"):
-        prob, extracted_feats = predict_uploaded_data(data)
+        prob, feats = predict_uploaded_data(data)
         label = classify_prediction(prob)
 
         st.header(f"Prediction: {label}")
@@ -171,12 +140,14 @@ if uploaded_file:
             st.image("assets/relaxed_baymax.png", width=250)
             st.balloons()
             st.success(random.choice(relaxed_responses))
+            st.image("assets/heart_animation.gif", width=150)
+            st.markdown("### 🤍 Thank you for visiting! Stay relaxed and cared for. – Baymax")
 
         st.subheader("Your Sensor Trends 📈")
         plot_temp_heart_trends(data['Temp'], data['Pulse'])
 
         with st.expander("Curious how Baymax made this decision?"):
-            show_extracted_features(extracted_feats)
+            show_extracted_features(feats, prob)
 
 # --- end of app ---
 
