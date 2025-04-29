@@ -1,4 +1,4 @@
-# --- baymax_app.py (final cute version) ---
+# --- baymax_app.py (final polished cute version) ---
 
 import streamlit as st
 import numpy as np
@@ -79,34 +79,49 @@ def plot_temp_heart_trends(temp_signal, heart_signal):
     axs[1].set_xlabel('Time')
     st.pyplot(fig)
 
-def predict_uploaded_data(data):
+def extract_features(data):
     heart = data['Pulse'].values
     temp = data['Temp'].values
-    peaks, _ = signal.find_peaks(heart, distance=250*0.6)
-    rr_intervals = np.diff(peaks) / 250
-    if len(rr_intervals) < 2:
-        rr_intervals = np.array([0.8, 0.8, 0.8])
-    mean_rr = np.mean(rr_intervals)
-    sdnn = np.std(rr_intervals)
-    rmssd = np.sqrt(np.mean(np.square(np.diff(rr_intervals))))
-    temp_mean = np.mean(temp)
-    temp_std = np.std(temp)
-    temp_slope = linregress(np.arange(len(temp)), temp).slope
+
+    # heart features
+    mean_rr = np.mean(heart)
+    sdnn = np.std(heart)
+    rmssd = np.sqrt(np.mean(np.square(np.diff(heart))))
+    cvrr = sdnn / mean_rr if mean_rr != 0 else 0
+
+    # temp features
+    mean_temp = np.mean(temp)
+    std_temp = np.std(temp)
+    slope_temp = linregress(np.arange(len(temp)), temp).slope
     temp_range = np.ptp(temp)
-    feats = np.array([mean_rr, sdnn, rmssd, temp_mean, temp_std, temp_slope, temp_range, np.min(temp)]).reshape(1, -1)
+
+    feats = np.array([mean_rr, sdnn, rmssd, cvrr, mean_temp, std_temp, slope_temp, temp_range]).reshape(1, -1)
+    return feats
+
+def predict_uploaded_data(data):
+    feats = extract_features(data)
     feats_scaled = scaler.transform(feats)
     prob = model.predict(feats_scaled)[0][0]
-    return prob
+    return prob, feats.flatten()
 
-def show_extracted_features():
-    st.markdown("### 🧠 Extracted Real Features from Your Upload")
+def show_extracted_features(features):
+    st.markdown("### 🧠 Curious How Baymax Made This Decision?")
+    st.markdown(f"""
+- **❤️ Mean Heart Signal:** {features[0]:.2f}  
+- **📈 SDNN (Heart Variability):** {features[1]:.2f}  
+- **⚡ RMSSD (Fast Beat Changes):** {features[2]:.2f}  
+- **🧮 CVRR (Normalized HRV):** {features[3]:.2f}  
+- **🌡️ Mean Temperature:** {features[4]:.2f} °C  
+- **🌪️ Temperature Variability:** {features[5]:.2f}  
+- **📉 Temperature Trend Slope:** {features[6]:.4f}  
+- **🌡️ Temperature Range:** {features[7]:.2f}
+""")
     st.markdown("""
-- **Mean RR**: Average time between heartbeats. Lower = faster heart rate.
-- **SDNN**: Standard deviation of heartbeat intervals. Higher = more variability, calmer system.
-- **RMSSD**: Quick beat-to-beat variability. Higher = healthier relaxed state.
-- **Temperature Mean/Std/Slope**: Your body's temperature steadiness.
-    """)
-    st.markdown("*Baymax analyzes these to detect emotional states. ❤️*")
+Baymax compares your body’s steadiness 🌡️❤️ to typical relaxed and stressed patterns.  
+Higher heart variability = relaxed.  
+Big temperature swings or fast heart = possible stress detected.  
+Stay steady like a calm ocean! 🌊
+""")
 
 # --- streamlit app layout ---
 st.set_page_config(page_title="Baymax Anxiety App", layout="wide")
@@ -131,7 +146,7 @@ if uploaded_file:
     st.write(data.head())
 
     if st.button("Analyze Now! 🚀"):
-        prob = predict_uploaded_data(data)
+        prob, extracted_feats = predict_uploaded_data(data)
         label = classify_prediction(prob)
 
         st.header(f"Prediction: {label}")
@@ -151,8 +166,9 @@ if uploaded_file:
         plot_temp_heart_trends(data['Temp'], data['Pulse'])
 
         with st.expander("Curious how Baymax made this decision?"):
-            show_extracted_features()
+            show_extracted_features(extracted_feats)
 
 # --- end of app ---
+
 
 
