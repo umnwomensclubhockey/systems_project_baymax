@@ -82,38 +82,31 @@ def plot_temp_heart_trends(temp_signal, heart_signal):
 def predict_uploaded_data(data):
     heart = data['Pulse'].values
     temp = data['Temp'].values
-    heart_features = [np.mean(heart), np.std(heart), np.ptp(heart), np.min(heart)]
-    temp_features = [np.mean(temp), np.std(temp), np.ptp(temp), np.min(temp)]
-    feats = np.array(heart_features + temp_features).reshape(1, -1)
+    peaks, _ = signal.find_peaks(heart, distance=250*0.6)
+    rr_intervals = np.diff(peaks) / 250
+    if len(rr_intervals) < 2:
+        rr_intervals = np.array([0.8, 0.8, 0.8])
+    mean_rr = np.mean(rr_intervals)
+    sdnn = np.std(rr_intervals)
+    rmssd = np.sqrt(np.mean(np.square(np.diff(rr_intervals))))
+    temp_mean = np.mean(temp)
+    temp_std = np.std(temp)
+    temp_slope = linregress(np.arange(len(temp)), temp).slope
+    temp_range = np.ptp(temp)
+    feats = np.array([mean_rr, sdnn, rmssd, temp_mean, temp_std, temp_slope, temp_range, np.min(temp)]).reshape(1, -1)
     feats_scaled = scaler.transform(feats)
     prob = model.predict(feats_scaled)[0][0]
     return prob
 
-def extract_uploaded_features(data):
-    heart = data['Pulse'].values
-    temp = data['Temp'].values
-    mean_rr = np.mean(np.diff(signal.find_peaks(heart, distance=fs_heart*0.6)[0])) / fs_heart
-    sdnn = np.std(np.diff(signal.find_peaks(heart, distance=fs_heart*0.6)[0])) / fs_heart
-    rmssd = np.sqrt(np.mean(np.square(np.diff(np.diff(signal.find_peaks(heart, distance=fs_heart*0.6)[0]))))) / fs_heart
-    return mean_rr, sdnn, rmssd
-
-def show_extracted_features(mean_rr, sdnn, rmssd):
-    st.markdown("### 🧠 Extracted Features from Your Uploaded Data")
-    feature_table = pd.DataFrame({
-        'Feature': ['Mean RR (s)', 'SDNN (s)', 'RMSSD (s)'],
-        'Your Value': [round(mean_rr, 4), round(sdnn, 4), round(rmssd, 4)]
-    })
-    st.table(feature_table)
-    st.write("🔍 **Interpretation:**")
+def show_extracted_features():
+    st.markdown("### 🧠 Extracted Real Features from Your Upload")
     st.markdown("""
-    - **Mean RR**: Higher means calmer, lower means stressed.
-    - **SDNN**: Measures heart rate variability. Lower values indicate stress.
-    - **RMSSD**: Captures quick fluctuations; lower suggests less relaxation.
+- **Mean RR**: Average time between heartbeats. Lower = faster heart rate.
+- **SDNN**: Standard deviation of heartbeat intervals. Higher = more variability, calmer system.
+- **RMSSD**: Quick beat-to-beat variability. Higher = healthier relaxed state.
+- **Temperature Mean/Std/Slope**: Your body's temperature steadiness.
     """)
-
-# --- settings ---
-fs_heart = 250
-fs_temp = 4
+    st.markdown("*Baymax analyzes these to detect emotional states. ❤️*")
 
 # --- streamlit app layout ---
 st.set_page_config(page_title="Baymax Anxiety App", layout="wide")
@@ -121,9 +114,6 @@ st.set_page_config(page_title="Baymax Anxiety App", layout="wide")
 st.markdown("""
 <style>
 body {
-    font-family: 'Quicksand', sans-serif;
-}
-h1, h2, h3, h4, h5 {
     font-family: 'Quicksand', sans-serif;
 }
 </style>
@@ -161,9 +151,8 @@ if uploaded_file:
         plot_temp_heart_trends(data['Temp'], data['Pulse'])
 
         with st.expander("Curious how Baymax made this decision?"):
-            mean_rr, sdnn, rmssd = extract_uploaded_features(data)
-            show_extracted_features(mean_rr, sdnn, rmssd)
-            st.write("Baymax analyzes how steady your heart rhythms and temperature trends are compared to known relaxed and anxious patterns. ❤️")
+            show_extracted_features()
 
+# --- end of app ---
 
 
