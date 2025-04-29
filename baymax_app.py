@@ -7,6 +7,10 @@ import matplotlib.pyplot as plt
 import joblib
 import tensorflow as tf
 import random
+import scipy.signal as signal
+from scipy.fft import fft
+from scipy.signal import welch
+from scipy.stats import linregress
 import os
 
 # --- set cute page config ---
