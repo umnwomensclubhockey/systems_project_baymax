@@ -82,12 +82,13 @@ def plot_temp_heart_trends(temp_signal, heart_signal):
 def predict_uploaded_data(data):
     heart = data['Pulse'].values
     temp = data['Temp'].values
+
     heart_features = extract_hrv_features(heart)
     temp_features = extract_temp_features(temp)
 
     min_len = min(len(heart_features), len(temp_features))
     if min_len == 0:
-        raise ValueError("Not enough data to extract features. Try uploading a longer recording.")
+        raise ValueError("Not enough data to extract features. Please upload a longer recording.")
 
     combined_feats = np.hstack([heart_features[:min_len], temp_features[:min_len]])
     combined_feats_mean = np.mean(combined_feats, axis=0).reshape(1, -1)
@@ -95,6 +96,7 @@ def predict_uploaded_data(data):
     feats_scaled = scaler.transform(combined_feats_mean)
     prob = model.predict(feats_scaled)[0][0]
     return prob
+
 
 
 def show_extracted_features():
