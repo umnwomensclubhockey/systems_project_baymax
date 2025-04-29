@@ -1,4 +1,4 @@
-# --- baymax_app.py (final polished cute version) ---
+# --- baymax_app.py (fully corrected) ---
 
 import streamlit as st
 import numpy as np
@@ -7,7 +7,6 @@ import matplotlib.pyplot as plt
 import joblib
 import tensorflow as tf
 import random
-import os
 import scipy.signal as signal
 from scipy.fft import fft
 from scipy.signal import welch
@@ -83,19 +82,28 @@ def extract_features(data):
     heart = data['Pulse'].values
     temp = data['Temp'].values
 
-    # heart features
+    # --- heart features ---
     mean_rr = np.mean(heart)
     sdnn = np.std(heart)
     rmssd = np.sqrt(np.mean(np.square(np.diff(heart))))
     cvrr = sdnn / mean_rr if mean_rr != 0 else 0
 
-    # temp features
+    freqs, psd = welch(heart, fs=250)
+    lf_power = np.sum(psd[(freqs >= 0.04) & (freqs <= 0.15)])
+    hf_power = np.sum(psd[(freqs > 0.15) & (freqs <= 0.4)])
+    lf_hf_ratio = lf_power / hf_power if hf_power > 0 else 0
+
+    # --- temp features ---
     mean_temp = np.mean(temp)
     std_temp = np.std(temp)
     slope_temp = linregress(np.arange(len(temp)), temp).slope
     temp_range = np.ptp(temp)
 
-    feats = np.array([mean_rr, sdnn, rmssd, cvrr, mean_temp, std_temp, slope_temp, temp_range]).reshape(1, -1)
+    feats = np.array([
+        mean_rr, sdnn, rmssd, cvrr, lf_power, hf_power, lf_hf_ratio,
+        mean_temp, std_temp, slope_temp, temp_range, np.min(temp)
+    ]).reshape(1, -1)
+
     return feats
 
 def predict_uploaded_data(data):
@@ -109,18 +117,20 @@ def show_extracted_features(features):
     st.markdown(f"""
 - **❤️ Mean Heart Signal:** {features[0]:.2f}  
 - **📈 SDNN (Heart Variability):** {features[1]:.2f}  
-- **⚡ RMSSD (Fast Beat Changes):** {features[2]:.2f}  
+- **⚡ RMSSD (Beat Changes):** {features[2]:.2f}  
 - **🧮 CVRR (Normalized HRV):** {features[3]:.2f}  
-- **🌡️ Mean Temperature:** {features[4]:.2f} °C  
-- **🌪️ Temperature Variability:** {features[5]:.2f}  
-- **📉 Temperature Trend Slope:** {features[6]:.4f}  
-- **🌡️ Temperature Range:** {features[7]:.2f}
+- **🎯 LF Power:** {features[4]:.2f}  
+- **🚀 HF Power:** {features[5]:.2f}  
+- **🔵 LF/HF Ratio:** {features[6]:.2f}  
+- **🌡️ Mean Temp:** {features[7]:.2f} °C  
+- **🌪️ Temp Variability:** {features[8]:.2f}  
+- **📈 Temp Trend Slope:** {features[9]:.4f}  
+- **🌡️ Temp Range:** {features[10]:.2f}  
+- **❄️ Temp Minimum:** {features[11]:.2f}
 """)
     st.markdown("""
-Baymax compares your body’s steadiness 🌡️❤️ to typical relaxed and stressed patterns.  
-Higher heart variability = relaxed.  
-Big temperature swings or fast heart = possible stress detected.  
-Stay steady like a calm ocean! 🌊
+Baymax looks for signs like faster heartbeat, unstable temperature, and shifting patterns.  
+Calm = steady waves 🌊, Stress = spiky storms ⚡.
 """)
 
 # --- streamlit app layout ---
@@ -169,6 +179,7 @@ if uploaded_file:
             show_extracted_features(extracted_feats)
 
 # --- end of app ---
+
 
 
 
