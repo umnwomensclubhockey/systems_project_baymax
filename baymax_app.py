@@ -1,4 +1,4 @@
-# --- baymax_app.py (final version) ---
+# --- baymax_app.py (final cute version) ---
 
 import streamlit as st
 import numpy as np
@@ -49,51 +49,6 @@ mild_stress_responses = [
     "Mild stress noted. A relaxing activity is suggested.",
     "You seem slightly tense. A short walk might help!"
 ]
-def extract_hrv_features(heart_signal):
-    fs_heart = 250
-    window_size_heart = 10 * fs_heart
-    feats = []
-    for start in range(0, len(heart_signal) - window_size_heart, window_size_heart):
-        window = heart_signal[start:start+window_size_heart]
-        if len(window) < window_size_heart:
-            continue
-        peaks, _ = signal.find_peaks(window, distance=fs_heart*0.6)
-        rr_intervals = np.diff(peaks) / fs_heart
-        if len(rr_intervals) < 2:
-            feats.append([0]*8)
-            continue
-        mean_rr = np.mean(rr_intervals)
-        sdnn = np.std(rr_intervals)
-        rmssd = np.sqrt(np.mean(np.square(np.diff(rr_intervals))))
-        cvrr = sdnn / mean_rr
-        freqs, psd = welch(rr_intervals, fs=1/np.mean(rr_intervals), nperseg=min(256, len(rr_intervals)))
-        lf_power = np.sum(psd[(freqs >= 0.04) & (freqs <= 0.15)])
-        hf_power = np.sum(psd[(freqs > 0.15) & (freqs <= 0.4)])
-        lf_hf_ratio = lf_power / hf_power if hf_power > 0 else 0
-        low_freq_power = np.sum(psd[(freqs >= 0) & (freqs <= 0.1)])
-        high_freq_power = np.sum(psd[(freqs > 0.1)])
-        high_low_ratio = high_freq_power / low_freq_power if low_freq_power > 0 else 0
-        feats.append([mean_rr, sdnn, rmssd, cvrr, lf_power, hf_power, lf_hf_ratio, high_low_ratio])
-    return np.array(feats)
-
-def extract_temp_features(temp_signal):
-    fs_temp = 4
-    window_size_temp = 10 * fs_temp
-    feats = []
-    for start in range(0, len(temp_signal) - window_size_temp, window_size_temp):
-        window = temp_signal[start:start+window_size_temp]
-        if len(window) < window_size_temp:
-            continue
-        mean_temp = np.mean(window)
-        std_temp = np.std(window)
-        slope_temp = linregress(np.arange(len(window)), window).slope
-        temp_fft = fft(window)
-        temp_power = np.abs(temp_fft[:len(temp_fft)//2])**2
-        low_power = np.sum(temp_power[(0 <= np.arange(len(temp_power))/len(temp_power)*fs_temp) & (np.arange(len(temp_power))/len(temp_power)*fs_temp <= 0.1)])
-        high_power = np.sum(temp_power[(np.arange(len(temp_power))/len(temp_power)*fs_temp > 0.1)])
-        high_low_ratio = high_power / low_power if low_power > 0 else 0
-        feats.append([mean_temp, std_temp, slope_temp, high_low_ratio])
-    return np.array(feats)
 
 # --- helper functions ---
 def classify_prediction(prob, threshold_anxious=0.6, threshold_mild=0.4):
@@ -127,31 +82,38 @@ def plot_temp_heart_trends(temp_signal, heart_signal):
 def predict_uploaded_data(data):
     heart = data['Pulse'].values
     temp = data['Temp'].values
-
-    heart_features = extract_hrv_features(heart)
-    temp_features = extract_temp_features(temp)
-
-    min_len = min(len(heart_features), len(temp_features))
-    if min_len == 0:
-        raise ValueError("Not enough data to extract features. Please upload a longer recording.")
-
-    combined_feats = np.hstack([heart_features[:min_len], temp_features[:min_len]])
-    combined_feats_mean = np.mean(combined_feats, axis=0).reshape(1, -1)
-
-    feats_scaled = scaler.transform(combined_feats_mean)
+    heart_features = [np.mean(heart), np.std(heart), np.ptp(heart), np.min(heart)]
+    temp_features = [np.mean(temp), np.std(temp), np.ptp(temp), np.min(temp)]
+    feats = np.array(heart_features + temp_features).reshape(1, -1)
+    feats_scaled = scaler.transform(feats)
     prob = model.predict(feats_scaled)[0][0]
     return prob
 
+def extract_uploaded_features(data):
+    heart = data['Pulse'].values
+    temp = data['Temp'].values
+    mean_rr = np.mean(np.diff(signal.find_peaks(heart, distance=fs_heart*0.6)[0])) / fs_heart
+    sdnn = np.std(np.diff(signal.find_peaks(heart, distance=fs_heart*0.6)[0])) / fs_heart
+    rmssd = np.sqrt(np.mean(np.square(np.diff(np.diff(signal.find_peaks(heart, distance=fs_heart*0.6)[0]))))) / fs_heart
+    return mean_rr, sdnn, rmssd
 
-
-def show_extracted_features():
-    st.markdown("### 🧠 Extracted Real Features from Monash and WESAD (60s intervals)")
+def show_extracted_features(mean_rr, sdnn, rmssd):
+    st.markdown("### 🧠 Extracted Features from Your Uploaded Data")
     feature_table = pd.DataFrame({
-        'Feature': ['Mean RR', 'SDNN', 'RMSSD'],
-        'Anxious': [0.0506, 0.3508, 0.5939],
-        'Relaxed': [0.0872, 0.9211, 1.1284]
+        'Feature': ['Mean RR (s)', 'SDNN (s)', 'RMSSD (s)'],
+        'Your Value': [round(mean_rr, 4), round(sdnn, 4), round(rmssd, 4)]
     })
     st.table(feature_table)
+    st.write("🔍 **Interpretation:**")
+    st.markdown("""
+    - **Mean RR**: Higher means calmer, lower means stressed.
+    - **SDNN**: Measures heart rate variability. Lower values indicate stress.
+    - **RMSSD**: Captures quick fluctuations; lower suggests less relaxation.
+    """)
+
+# --- settings ---
+fs_heart = 250
+fs_temp = 4
 
 # --- streamlit app layout ---
 st.set_page_config(page_title="Baymax Anxiety App", layout="wide")
@@ -159,6 +121,9 @@ st.set_page_config(page_title="Baymax Anxiety App", layout="wide")
 st.markdown("""
 <style>
 body {
+    font-family: 'Quicksand', sans-serif;
+}
+h1, h2, h3, h4, h5 {
     font-family: 'Quicksand', sans-serif;
 }
 </style>
@@ -196,9 +161,9 @@ if uploaded_file:
         plot_temp_heart_trends(data['Temp'], data['Pulse'])
 
         with st.expander("Curious how Baymax made this decision?"):
-            show_extracted_features()
+            mean_rr, sdnn, rmssd = extract_uploaded_features(data)
+            show_extracted_features(mean_rr, sdnn, rmssd)
             st.write("Baymax analyzes how steady your heart rhythms and temperature trends are compared to known relaxed and anxious patterns. ❤️")
 
-# --- end of app ---
 
 
