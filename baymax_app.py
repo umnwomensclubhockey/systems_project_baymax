@@ -49,6 +49,51 @@ mild_stress_responses = [
     "Mild stress noted. A relaxing activity is suggested.",
     "You seem slightly tense. A short walk might help!"
 ]
+def extract_hrv_features(heart_signal):
+    fs_heart = 250
+    window_size_heart = 10 * fs_heart
+    feats = []
+    for start in range(0, len(heart_signal) - window_size_heart, window_size_heart):
+        window = heart_signal[start:start+window_size_heart]
+        if len(window) < window_size_heart:
+            continue
+        peaks, _ = signal.find_peaks(window, distance=fs_heart*0.6)
+        rr_intervals = np.diff(peaks) / fs_heart
+        if len(rr_intervals) < 2:
+            feats.append([0]*8)
+            continue
+        mean_rr = np.mean(rr_intervals)
+        sdnn = np.std(rr_intervals)
+        rmssd = np.sqrt(np.mean(np.square(np.diff(rr_intervals))))
+        cvrr = sdnn / mean_rr
+        freqs, psd = welch(rr_intervals, fs=1/np.mean(rr_intervals), nperseg=min(256, len(rr_intervals)))
+        lf_power = np.sum(psd[(freqs >= 0.04) & (freqs <= 0.15)])
+        hf_power = np.sum(psd[(freqs > 0.15) & (freqs <= 0.4)])
+        lf_hf_ratio = lf_power / hf_power if hf_power > 0 else 0
+        low_freq_power = np.sum(psd[(freqs >= 0) & (freqs <= 0.1)])
+        high_freq_power = np.sum(psd[(freqs > 0.1)])
+        high_low_ratio = high_freq_power / low_freq_power if low_freq_power > 0 else 0
+        feats.append([mean_rr, sdnn, rmssd, cvrr, lf_power, hf_power, lf_hf_ratio, high_low_ratio])
+    return np.array(feats)
+
+def extract_temp_features(temp_signal):
+    fs_temp = 4
+    window_size_temp = 10 * fs_temp
+    feats = []
+    for start in range(0, len(temp_signal) - window_size_temp, window_size_temp):
+        window = temp_signal[start:start+window_size_temp]
+        if len(window) < window_size_temp:
+            continue
+        mean_temp = np.mean(window)
+        std_temp = np.std(window)
+        slope_temp = linregress(np.arange(len(window)), window).slope
+        temp_fft = fft(window)
+        temp_power = np.abs(temp_fft[:len(temp_fft)//2])**2
+        low_power = np.sum(temp_power[(0 <= np.arange(len(temp_power))/len(temp_power)*fs_temp) & (np.arange(len(temp_power))/len(temp_power)*fs_temp <= 0.1)])
+        high_power = np.sum(temp_power[(np.arange(len(temp_power))/len(temp_power)*fs_temp > 0.1)])
+        high_low_ratio = high_power / low_power if low_power > 0 else 0
+        feats.append([mean_temp, std_temp, slope_temp, high_low_ratio])
+    return np.array(feats)
 
 # --- helper functions ---
 def classify_prediction(prob, threshold_anxious=0.6, threshold_mild=0.4):
