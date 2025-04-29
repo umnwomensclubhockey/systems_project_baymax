@@ -82,12 +82,20 @@ def plot_temp_heart_trends(temp_signal, heart_signal):
 def predict_uploaded_data(data):
     heart = data['Pulse'].values
     temp = data['Temp'].values
-    heart_features = [np.mean(heart), np.std(heart), np.ptp(heart), np.min(heart)]
-    temp_features = [np.mean(temp), np.std(temp), np.ptp(temp), np.min(temp)]
-    feats = np.array(heart_features + temp_features).reshape(1, -1)
-    feats_scaled = scaler.transform(feats)
+    heart_features = extract_hrv_features(heart)
+    temp_features = extract_temp_features(temp)
+
+    min_len = min(len(heart_features), len(temp_features))
+    if min_len == 0:
+        raise ValueError("Not enough data to extract features. Try uploading a longer recording.")
+
+    combined_feats = np.hstack([heart_features[:min_len], temp_features[:min_len]])
+    combined_feats_mean = np.mean(combined_feats, axis=0).reshape(1, -1)
+
+    feats_scaled = scaler.transform(combined_feats_mean)
     prob = model.predict(feats_scaled)[0][0]
     return prob
+
 
 def show_extracted_features():
     st.markdown("### 🧠 Extracted Real Features from Monash and WESAD (60s intervals)")
