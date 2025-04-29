@@ -1,4 +1,4 @@
-# --- baymax_app.py (final FINAL cute version with thank you + heart) ---
+# --- baymax_app.py (final polished) ---
 
 import streamlit as st
 import numpy as np
@@ -50,6 +50,7 @@ mild_stress_responses = [
 ]
 
 # --- helper functions ---
+
 def classify_prediction(prob, threshold_anxious=0.6, threshold_mild=0.4):
     if prob > threshold_anxious:
         return 'Anxious'
@@ -67,40 +68,72 @@ def load_uploaded_file(uploaded_file):
         data.rename(columns={'Temperature_C': 'Temp'}, inplace=True)
     return data
 
+def extract_features(data):
+    heart = data['Pulse'].values
+    temp = data['Temp'].values
+
+    peaks, _ = signal.find_peaks(heart, distance=250*0.6)
+    rr_intervals = np.diff(peaks) / 250
+    if len(rr_intervals) < 2:
+        rr_intervals = np.array([0.8, 0.8, 0.8])  # fallback
+
+    mean_rr = np.mean(rr_intervals)
+    sdnn = np.std(rr_intervals)
+    rmssd = np.sqrt(np.mean(np.square(np.diff(rr_intervals))))
+    cvrr = sdnn / mean_rr if mean_rr != 0 else 0
+
+    freqs, psd = welch(rr_intervals, fs=1/np.mean(rr_intervals), nperseg=min(256, len(rr_intervals)))
+    lf_power = np.sum(psd[(freqs >= 0.04) & (freqs <= 0.15)])
+    hf_power = np.sum(psd[(freqs > 0.15) & (freqs <= 0.4)])
+    lf_hf_ratio = lf_power / hf_power if hf_power > 0 else 0
+
+    mean_temp = np.mean(temp)
+    temp_std = np.std(temp)
+    temp_slope = linregress(np.arange(len(temp)), temp).slope
+    temp_range = np.ptp(temp)
+
+    feats = np.array([
+        mean_rr, sdnn, rmssd, cvrr, lf_power, hf_power, lf_hf_ratio,
+        mean_temp, temp_std, temp_slope, temp_range, np.min(temp)
+    ]).reshape(1, -1)
+
+    return feats
+
+def predict_uploaded_data(data):
+    feats = extract_features(data)
+    feats_scaled = scaler.transform(feats)
+    prob = model.predict(feats_scaled)[0][0]
+    return prob, feats.flatten()
+
 def plot_temp_heart_trends(temp_signal, heart_signal):
     fig, axs = plt.subplots(2, 1, figsize=(12,6))
-    axs[0].plot(temp_signal)
+    axs[0].plot(temp_signal, color='tomato')
     axs[0].set_title('Temperature Trend')
     axs[0].set_ylabel('Temperature (°C)')
-    axs[1].plot(heart_signal)
+    axs[1].plot(heart_signal, color='royalblue')
     axs[1].set_title('Heart Signal Trend')
     axs[1].set_ylabel('Pulse Raw')
     axs[1].set_xlabel('Time')
     st.pyplot(fig)
 
-def predict_uploaded_data(data):
-    heart = data['Pulse'].values
-    temp = data['Temp'].values
-    heart_features = [np.mean(heart), np.std(heart), np.ptp(heart), np.min(heart)]
-    temp_features = [np.mean(temp), np.std(temp), np.ptp(temp), np.min(temp)]
-    feats = np.array(heart_features + temp_features).reshape(1, -1)
-    feats_scaled = scaler.transform(feats)
-    prob = model.predict(feats_scaled)[0][0]
-    return prob, feats.flatten()
-
 def show_extracted_features(features, prob):
     st.markdown("### 🧠 Curious How Baymax Made This Decision?")
-    feature_names = ['Mean Heart', 'Heart SD', 'Heart Range', 'Heart Min', 'Mean Temp', 'Temp SD', 'Temp Range', 'Temp Min']
-    feature_table = pd.DataFrame({
-        'Feature': feature_names,
-        'Value': features
-    })
-    st.table(feature_table)
-    st.markdown("### 📊 How These Features Compare")
-    st.write(f"- If prediction probability > 0.6 ➔ classified as **Anxious** (yours = {prob:.2f})")
-    st.write(f"- If between 0.4 and 0.6 ➔ classified as **Mild Stress**")
-    st.write(f"- If < 0.4 ➔ classified as **Relaxed**")
-    st.write("Baymax looks for steady heart rhythms and calm temperatures to protect your emotional well-being. ❤️")
+    feature_names = [
+        "Mean RR Interval", "SDNN (Variability)", "RMSSD (Beat Changes)", "CVRR (Normalized Variability)",
+        "LF Power", "HF Power", "LF/HF Ratio",
+        "Mean Temp", "Temp Std", "Temp Slope", "Temp Range", "Temp Minimum"
+    ]
+    df = pd.DataFrame({"Feature": feature_names, "Your Value": features})
+    st.table(df)
+
+    st.markdown(f"""
+**Decision Logic:**
+- If prediction probability > 0.6 ➔ classified as **Anxious** (your score: **{prob:.2f}**)
+- If between 0.4 and 0.6 ➔ classified as **Mild Stress**
+- If < 0.4 ➔ classified as **Relaxed**
+
+🩺 **Baymax watches:** heartbeat stability (low RMSSD = anxious), temp steadiness (wild temp = anxious), and LF/HF balance.
+""")
 
 # --- streamlit app layout ---
 st.set_page_config(page_title="Baymax Anxiety App", layout="wide")
@@ -140,8 +173,6 @@ if uploaded_file:
             st.image("assets/relaxed_baymax.png", width=250)
             st.balloons()
             st.success(random.choice(relaxed_responses))
-            st.image("assets/heart_animation.gif", width=150)
-            st.markdown("### 🤍 Thank you for visiting! Stay relaxed and cared for. – Baymax")
 
         st.subheader("Your Sensor Trends 📈")
         plot_temp_heart_trends(data['Temp'], data['Pulse'])
@@ -150,6 +181,7 @@ if uploaded_file:
             show_extracted_features(feats, prob)
 
 # --- end of app ---
+
 
 
 
