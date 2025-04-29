@@ -79,14 +79,60 @@ def plot_temp_heart_trends(temp_signal, heart_signal):
     st.pyplot(fig)
 
 def predict_uploaded_data(data):
-    heart = data['Pulse'].values
+    pulse = data['Pulse'].values
     temp = data['Temp'].values
-    heart_features = [np.mean(heart), np.std(heart), np.ptp(heart), np.min(heart)]
-    temp_features = [np.mean(temp), np.std(temp), np.ptp(temp), np.min(temp)]
-    feats = np.array(heart_features + temp_features).reshape(1, -1)
-    feats_scaled = scaler.transform(feats)
-    prob = model.predict(feats_scaled)[0][0]
-    return prob
+
+    # --- heart feature extraction ---
+    fs_heart = 250
+    window_size_heart = 10 * fs_heart
+    heart_feats = []
+    for start in range(0, len(pulse) - window_size_heart, window_size_heart):
+        window = pulse[start:start+window_size_heart]
+        if len(window) < window_size_heart:
+            continue
+        peaks, _ = signal.find_peaks(window, distance=fs_heart*0.6)
+        rr_intervals = np.diff(peaks) / fs_heart
+        if len(rr_intervals) < 2:
+            continue
+        mean_rr = np.mean(rr_intervals)
+        sdnn = np.std(rr_intervals)
+        rmssd = np.sqrt(np.mean(np.square(np.diff(rr_intervals))))
+        cvrr = sdnn / mean_rr
+        freqs, psd = welch(rr_intervals, fs=1/np.mean(rr_intervals), nperseg=min(256, len(rr_intervals)))
+        lf_power = np.sum(psd[(freqs >= 0.04) & (freqs <= 0.15)])
+        hf_power = np.sum(psd[(freqs > 0.15) & (freqs <= 0.4)])
+        lf_hf_ratio = lf_power / hf_power if hf_power > 0 else 0
+        low_freq_power = np.sum(psd[(freqs >= 0) & (freqs <= 0.1)])
+        high_freq_power = np.sum(psd[(freqs > 0.1)])
+        high_low_ratio = high_freq_power / low_freq_power if low_freq_power > 0 else 0
+        heart_feats.append([mean_rr, sdnn, rmssd, cvrr, lf_power, hf_power, lf_hf_ratio, high_low_ratio])
+
+    # --- temp feature extraction ---
+    fs_temp = 4
+    window_size_temp = 10 * fs_temp
+    temp_feats = []
+    for start in range(0, len(temp) - window_size_temp, window_size_temp):
+        window = temp[start:start+window_size_temp]
+        if len(window) < window_size_temp:
+            continue
+        mean_temp = np.mean(window)
+        std_temp = np.std(window)
+        slope_temp = linregress(np.arange(len(window)), window).slope
+        temp_fft = fft(window)
+        temp_power = np.abs(temp_fft[:len(temp_fft)//2])**2
+        low_power = np.sum(temp_power[(0 <= np.arange(len(temp_power))/len(temp_power)*fs_temp) & (np.arange(len(temp_power))/len(temp_power)*fs_temp <= 0.1)])
+        high_power = np.sum(temp_power[(np.arange(len(temp_power))/len(temp_power)*fs_temp > 0.1)])
+        high_low_ratio = high_power / low_power if low_power > 0 else 0
+        temp_feats.append([mean_temp, std_temp, slope_temp, high_low_ratio])
+
+    # match windows
+    min_len = min(len(heart_feats), len(temp_feats))
+    combined_feats = np.hstack([np.array(heart_feats[:min_len]), np.array(temp_feats[:min_len])])
+
+    feats_scaled = scaler.transform(combined_feats)
+    prob = model.predict(feats_scaled)
+    return np.mean(prob)
+
 
 # --- page layout ---
 st.image('assets/baymax_cute.png', width=300)
